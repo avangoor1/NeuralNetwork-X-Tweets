@@ -1,0 +1,5 @@
+api
+__pycache__
+.python-version
+myenv2
+TrainedModel_2024-11-04_0.619.pt
