@@ -86,7 +86,7 @@ if __name__ == "__main__":
     #dictionary to output the data
     structure = {}
 
-    MODEL_FILENAME = "TrainedModel_2024-11-04_0.619.pt" # Chosen from saved models
+    MODEL_FILENAME = "TrainedModel_2024-11-04_0.619.pt" # Choose from saved models in the Trained Models folder
     INPUT_FILENAME = "test_tweets.csv" # One Column, Header of "content"
     model: Model = load_saved_model(MODEL_FILENAME)
     all_predictions = None  # Or any desired initial value
