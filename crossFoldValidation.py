@@ -1,13 +1,25 @@
+import random
+import time
+from datetime import datetime
+import pandas as pd
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-import pandas as pd
-from keras._tf_keras.keras.preprocessing.text import Tokenizer
-from keras._tf_keras.keras.preprocessing import sequence
+from sklearn.model_selection import train_test_split
 
-# Hyperparameters
+from tensorflow import keras
+from keras._tf_keras.keras.preprocessing import sequence
+from keras._tf_keras.keras.preprocessing.text import Tokenizer
+
+CSV_FILENAME = "./tweets.csv"
+CSV_NO_IDS_FILENAME = "2000Tweets.csv"
+
+MISSING = object()
+
+# HYPERPARAMETERS
 HYPERPARAMETERS = {
     "EMBEDDING_DIM": 2048,
     "NUM_HIDDEN_NODES": 2048,
@@ -15,12 +27,13 @@ HYPERPARAMETERS = {
     "NUM_LAYERS": 2,
     "BIDIRECTION": True,
     "DROPOUT": 0.2,
-    "NUM_TRAINING_EPOCHS": 10,
-    "BATCH_SIZE": 64,
-    "NUM_FOLDS": 5  # Adjust based on the number of folds you have
+    "NUM_TRAINING_EPOCHS": 15
 }
 
 class DatasetMapper(Dataset):
+    '''
+    Handles batches of dataset
+    '''
     def __init__(self, x, y):
         self.x = x
         self.y = y
@@ -30,6 +43,18 @@ class DatasetMapper(Dataset):
 
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx]
+
+def calculate_accuracy(ground_truth, predictions):
+    true_positives = 0
+    true_negatives = 0
+
+    for true, pred in zip(ground_truth, predictions):
+        if (pred > 0.5) and (true == 1):
+            true_positives += 1
+        elif (pred < 0.5) and (true == 0):
+            true_negatives += 1
+
+    return (true_positives+true_negatives) / len(ground_truth)
 
 class Model(nn.Module):
     def __init__(self, embedding_dim, hidden_dim, n_layers, bidirectional, dropout):
@@ -45,113 +70,116 @@ class Model(nn.Module):
             batch_first=True
         )
         self.dropout = nn.Dropout(dropout)
-        self.fc1 = nn.Linear(2 * hidden_dim, 257)
+        self.fc1 = nn.Linear(in_features=2*self.hidden_dim, out_features=257)
         self.fc2 = nn.Linear(257, 1)
 
     def forward(self, x):
-        h = torch.zeros((2 * self.lstm_layers, x.size(0), self.hidden_dim))
-        c = torch.zeros((2 * self.lstm_layers, x.size(0), self.hidden_dim))
-        torch.nn.init.xavier_normal_(h)
-        torch.nn.init.xavier_normal_(c)
-        out = self.embedding(x)
-        out, (hidden, cell) = self.lstm(out, (h, c))
-        out = self.dropout(out)
-        out = torch.relu(self.fc1(out[:, -1, :]))
-        out = self.dropout(out)
-        out = torch.sigmoid(self.fc2(out))
-        return out
+      device = x.device  # Get the device of the input tensor
+      h = torch.zeros((2 * self.lstm_layers, x.size(0), self.hidden_dim), device=device)
+      c = torch.zeros((2 * self.lstm_layers, x.size(0), self.hidden_dim), device=device)
 
-def load_data(fold):
-    train_file = f"foldTrain{fold}.csv"
-    test_file = f"foldTest{fold}.csv"
-    
-    train_data = pd.read_csv(train_file)
-    test_data = pd.read_csv(test_file)
-    
-    X_train, Y_train = train_data['content'].values, train_data['class'].values
-    X_test, Y_test = test_data['content'].values, test_data['class'].values
-    
-    tokenizer = Tokenizer(num_words=1000)
-    tokenizer.fit_on_texts(X_train)
-    
-    x_train = sequence.pad_sequences(tokenizer.texts_to_sequences(X_train), maxlen=train_data.content.str.len().max())
-    x_test = sequence.pad_sequences(tokenizer.texts_to_sequences(X_test), maxlen=test_data.content.str.len().max())
-    
-    return DatasetMapper(x_train, Y_train), DatasetMapper(x_test, Y_test)
+      torch.nn.init.xavier_normal_(h)
+      torch.nn.init.xavier_normal_(c)
 
-def train(model, loader, optimizer):
-    model.train()
-    for x_batch, y_batch in loader:
-        optimizer.zero_grad()
-        x = x_batch.type(torch.LongTensor)
-        y = y_batch.type(torch.FloatTensor)
-        predictions = model(x).squeeze()
-        loss = F.binary_cross_entropy(predictions, y)
-        loss.backward()
-        optimizer.step()
-    return loss.item()
+      out = self.embedding(x)  # Ensure x is on the same device as model parameters
+      out, (hidden, cell) = self.lstm(out, (h, c))
+      out = self.dropout(out)
+      out = torch.relu_(self.fc1(out[:, -1, :]))
+      out = self.dropout(out)
+      out = torch.sigmoid(self.fc2(out))
 
-def evaluate(model, loader, dataset):
-    model.eval()
-    predictions = []
-    ground_truths = []
-    tweet_texts = dataset.x  # Store original tweet texts
-    
-    with torch.no_grad():
-        for x_batch, y_batch in loader:
-            x = x_batch.type(torch.LongTensor)
-            y_pred = model(x).squeeze().detach().numpy()
-            predictions.extend(y_pred)
-            ground_truths.extend(y_batch.numpy())
+      return out
 
-    return tweet_texts, predictions, ground_truths
 
-def calculate_accuracy(ground_truth, predictions):
-    correct = sum((p > 0.5) == (t == 1) for p, t in zip(predictions, ground_truth))
-    return correct / len(ground_truth)
+def prepare_datasets_and_model(HYPERPARAMETERS: dict):
+    csv_data = pd.read_csv(CSV_NO_IDS_FILENAME)
 
-def run_cross_validation():
-    total_accuracy = 0
+    X = csv_data['content'].values
+    Y = csv_data['class'].values
+
+    raw_x_train, raw_x_test, y_train, y_test = train_test_split(X, Y, test_size=0.2)
+
+    tokens = Tokenizer(num_words=1000)
+    tokens.fit_on_texts(raw_x_train)
+    sequences = tokens.texts_to_sequences(raw_x_train)
+    x_train = sequence.pad_sequences(sequences, maxlen=csv_data.content.str.len().max())
+    sequences = tokens.texts_to_sequences(raw_x_test)
+    x_test = sequence.pad_sequences(sequences, maxlen=csv_data.content.str.len().max())
+
+    training_set = DatasetMapper(x_train, y_train)
+    test_set = DatasetMapper(x_test, y_test)
+
+    BATCH_SIZE = 64
+    train_loader = DataLoader(training_set, batch_size=BATCH_SIZE)
+    test_loader = DataLoader(test_set)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    for fold in range(1, HYPERPARAMETERS["NUM_FOLDS"] + 1):
-        print(f"Processing Fold {fold}...")
-        train_set, test_set = load_data(fold)
+    model = Model(
+        HYPERPARAMETERS["EMBEDDING_DIM"],
+        HYPERPARAMETERS["NUM_HIDDEN_NODES"],
+        HYPERPARAMETERS["NUM_LAYERS"],
+        HYPERPARAMETERS["BIDIRECTION"],
+        HYPERPARAMETERS["DROPOUT"]
+    )
 
-        train_loader = DataLoader(train_set, batch_size=HYPERPARAMETERS["BATCH_SIZE"], shuffle=True)
-        test_loader = DataLoader(test_set)
+    model = model.to(device)
+    optimizer = optim.RMSprop(model.parameters(), lr=1e-4)
+    return model, optimizer, train_loader, test_loader, y_train, y_test
 
-        model = Model(
-            HYPERPARAMETERS["EMBEDDING_DIM"],
-            HYPERPARAMETERS["NUM_HIDDEN_NODES"],
-            HYPERPARAMETERS["NUM_LAYERS"],
-            HYPERPARAMETERS["BIDIRECTION"],
-            HYPERPARAMETERS["DROPOUT"]
-        ).to(device)
-        optimizer = optim.RMSprop(model.parameters(), lr=1e-4)
+def train(model, loader, optimizer, device) -> list:
+    epoch_loss = 0.0
+    epoch_acc = 0.0
 
-        for epoch in range(1, HYPERPARAMETERS["NUM_TRAINING_EPOCHS"] + 1):
-            loss = train(model, train_loader, optimizer)
-            print(f"Fold {fold}, Epoch {epoch}: Loss = {loss:.5f}")
+    model.train()
 
-        # Evaluate and save predictions
-        tweet_texts, test_predictions, ground_truths = evaluate(model, test_loader, test_set)
-        accuracy = calculate_accuracy(ground_truths, test_predictions)
-        print(f"Fold {fold} Accuracy: {accuracy:.5f}")
-        total_accuracy += accuracy
+    epoch_predictions = []
 
-        # Save predictions and ground truth to a CSV file
-        output_df = pd.DataFrame({
-            "Tweet_Text": tweet_texts,
-            "Predicted_Score": test_predictions,
-            "Ground_Truth": ground_truths
-        })
-        output_df.to_csv(f"fold_predictions_{fold}.csv", index=False)
-        print(f"Saved predictions for Fold {fold} to fold_predictions_{fold}.csv")
+    for x_batch, y_batch in loader:
+        x_batch = x_batch.to(device).long()  # Move to GPU/CPU
+        y_batch = y_batch.to(device).float()  # Move to GPU/CPU
 
-    avg_accuracy = total_accuracy / HYPERPARAMETERS["NUM_FOLDS"]
-    print(f"Average Accuracy across {HYPERPARAMETERS['NUM_FOLDS']} folds: {avg_accuracy:.5f}")
+        optimizer.zero_grad()
 
+        predictions = model(x_batch)
+        predictions = torch.squeeze(predictions)
+
+        loss = F.binary_cross_entropy(predictions, y_batch)
+        loss.backward()
+
+        optimizer.step()
+
+        epoch_predictions += list(predictions.squeeze().detach().cpu().numpy())
+
+    return epoch_predictions, loss
+
+def evaluate(model, loader, device) -> list:
+    model.eval()
+
+    epoch_predictions = []
+
+    with torch.no_grad():
+        for x_batch, y_batch in loader:
+            x_batch = x_batch.to(device).long()
+
+            y_pred = model(x_batch)
+            epoch_predictions += list(y_pred.detach().cpu().numpy())
+    return epoch_predictions
+
+def run(auto_save: bool):
+    model, optimizer, train_loader, test_loader, y_train, y_test = prepare_datasets_and_model(HYPERPARAMETERS)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    final_acc = 0
+
+    for epoch in range(1, HYPERPARAMETERS["NUM_TRAINING_EPOCHS"] + 1):
+        train_predictions, loss = train(model, train_loader, optimizer, device)
+        test_predictions = evaluate(model, test_loader, device)
+
+        train_accuracy = calculate_accuracy(y_train, train_predictions)
+        test_accuracy = calculate_accuracy(y_test, test_predictions)
+
+        final_acc = test_accuracy
+        print(f"Epoch: {epoch+1}, loss: {loss.item():.5f}, Train accuracy: {train_accuracy:.5f}, Test accuracy: {test_accuracy:.5f}")
 
 if __name__ == "__main__":
-    run_cross_validation()
+    run(auto_save=True)
