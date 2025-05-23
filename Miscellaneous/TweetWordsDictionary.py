@@ -1,10 +1,13 @@
+# This program was used to identify the words used in the transfer learning dataset to see if they were present
+# in the training data set of the neural network.
+
 file = open('dictionary.txt', 'r')
 
 input = file.read()
 
 print(input)
 
-transferDataset = open('transfer_learning_modified.csv', 'r')
+transferDataset = open('Transfer Learning Datasets/transfer_learning_modified.csv', 'r')
 
 transferDataset.seek(0)
 

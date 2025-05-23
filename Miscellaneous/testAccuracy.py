@@ -1,3 +1,5 @@
+# This program was written to find the accuracy of the neural network when tested against a custom test set.
+
 import csv
 
 luck, meritocracy = 0, 0

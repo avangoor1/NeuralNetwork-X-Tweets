@@ -1,3 +1,5 @@
+# This program will use the model that you created to test against a set of unseen tweets.
+
 import pandas as pd
 import json
 import torch
@@ -7,9 +9,9 @@ import csv
 from keras._tf_keras.keras.preprocessing import sequence
 from keras._tf_keras.keras.preprocessing.text import Tokenizer
 
-from model_training import DatasetMapper, Model, HYPERPARAMETERS
+from Miscellaneous.model_training import DatasetMapper, Model, HYPERPARAMETERS
 
-CSV_NO_IDS_FILENAME = "./tweets_no_ids.csv"
+CSV_NO_IDS_FILENAME = "Original Tweets Data/tweets_no_ids.csv"
 COUNT = 0
 
 def load_saved_model(filename: str) -> Model:
@@ -86,17 +88,16 @@ if __name__ == "__main__":
     #dictionary to output the data
     structure = {}
 
-    MODEL_FILENAME = "TrainedModel_2024-11-04_0.619.pt" # Choose from saved models in the Trained Models folder
-    INPUT_FILENAME = "test_tweets.csv" # One Column, Header of "content"
+    MODEL_FILENAME = "TrainedModels/trained_model_1600.pt" # Choose from saved models in the Trained Models folder
+    INPUT_FILENAME = "" # One Column, Header of "content" format for the test set you want to test your neural network on
     model: Model = load_saved_model(MODEL_FILENAME)
-    all_predictions = None  # Or any desired initial value
+    all_predictions = None 
 
 
     predictions = predict(model, INPUT_FILENAME)
 
     COUNT = 0
 
-    # # Do something with predictions
     # print(predictions)
 
     all_predictions = torch.cat(predictions, dim=0)
@@ -113,7 +114,7 @@ if __name__ == "__main__":
 
     # Open the filteredTweets.csv file in read mode
     with open("filteredTweets.csv", mode='r', newline='', encoding='utf-8') as input_file:
-        csv_reader = list(csv.reader(input_file))  # Read all rows
+        csv_reader = list(csv.reader(input_file))  
 
     # Calculate average of `values`
     if values:  # Check if values is not empty
@@ -126,45 +127,5 @@ if __name__ == "__main__":
         
         # Loop through each row in csv_reader
         for i, row in enumerate(csv_reader):
-            row.append(str(values[i]))  # Append the value at the ith index to the row
-            csv_writer.writerow(row)  # Write the updated row to the file
-
-
-    # # Save dictionary structure to output file
-    # outputFile.write(json.dumps(structure) + "\n")
-    # # outputFile.write("Temperature: " + str(average) + "\n")
-    # outputFile.close()
-
-
-    # # File paths
-    # new_values_file = "test_tweets.csv"
-    # tweets_file = "Tweet_Data.json"
-    # output_file = "merged_values.csv"
-
-    # # Read new_values from the text file
-    # with open(new_values_file, "r") as nv_file:
-    #     new_values = nv_file.readlines()
-
-    # # Read tweets from the JSON file
-    # with open(tweets_file, "r") as t_file:
-    #     tweets = json.load(t_file)
-
-    # # Process and merge the data
-    # merged_values = []
-    # for i, line in enumerate(new_values):
-    #     tweet_key = str(i)  # Get the corresponding key for the current line
-    #     line = line.strip()  # Remove trailing newline characters
-    #     if tweet_key in tweets:
-    #         second_value = tweets[tweet_key][1]  # Get the second value from tweets
-    #         merged_values.append(f"{line},{second_value}")
-    #     else:
-    #         merged_values.append(line)  # In case of a missing key, keep the line unchanged
-
-    # # Write the merged values to the output file
-    # with open(output_file, "w") as out_file:
-    #     out_file.write("Tweet ID, Author ID, Date Published, Tweet Text, Temperature\n")
-    #     out_file.write("\n".join(merged_values))
-    #     out_file.write("\nAverage Temperature: " + str(average) + "\n")
-
-    # print(f"Merged values written to {output_file}")
-
+            row.append(str(values[i]))  
+            csv_writer.writerow(row)  
