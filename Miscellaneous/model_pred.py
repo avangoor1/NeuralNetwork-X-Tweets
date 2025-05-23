@@ -1,4 +1,6 @@
-# This program will use the model that you created to test against a set of unseen tweets.
+# This program will use the model that you created to test against a set of unseen tweets. This can use used
+# when you have a model created and want to test it against unseen tweets to understand the results of a specific
+# group you point the tool at.
 
 import pandas as pd
 import json

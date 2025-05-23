@@ -11,7 +11,7 @@ import pandas as pd
 from keras._tf_keras.keras.preprocessing.text import Tokenizer
 from keras._tf_keras.keras.preprocessing import sequence
 import numpy as np
-from sklearn.model_selection import train_test_split
+
 
 # Hyperparameters
 HYPERPARAMETERS = {
@@ -22,7 +22,8 @@ HYPERPARAMETERS = {
     "BIDIRECTION": True,
     "DROPOUT": 0.2,
     "NUM_TRAINING_EPOCHS": 16,
-    "BATCH_SIZE": 64
+    "BATCH_SIZE": 64,
+    "NUM_FOLDS": 5
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -69,20 +70,16 @@ class Model(nn.Module):
         out = torch.sigmoid(self.fc2(out))
         return out
 
-def load_data():
-    train_file = "" # add the path to the file you want to train from, checkout the folder "Cross Fold Validation Sets" for an example
+def load_data(fold):
+    train_file = f"/content/foldTrain{fold}.csv"
+    test_file = f"/content/foldTest{fold}.csv"
     train_data = pd.read_csv(train_file)
-
+    test_data = pd.read_csv(test_file)
     tokenizer = Tokenizer(num_words=1000)
     tokenizer.fit_on_texts(train_data['content'].values)
-
-    x_data = sequence.pad_sequences(tokenizer.texts_to_sequences(train_data['content'].values))
-    y_data = train_data['class'].values
-
-    # Split data into training (80%) and testing (20%)
-    x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=0.2, random_state=42)
-
-    return DatasetMapper(x_train, y_train), DatasetMapper(x_test, y_test)
+    x_train = sequence.pad_sequences(tokenizer.texts_to_sequences(train_data['content'].values))
+    x_test = sequence.pad_sequences(tokenizer.texts_to_sequences(test_data['content'].values))
+    return DatasetMapper(x_train, train_data['class'].values), DatasetMapper(x_test, test_data['class'].values)
 
 def train(model, loader, optimizer):
     model.train()
@@ -95,26 +92,65 @@ def train(model, loader, optimizer):
         optimizer.step()
     return loss.item()
 
-def run_training():
-    clear_cuda_memory()
-    train_set, test_set = load_data()
-    train_loader = DataLoader(train_set, batch_size=HYPERPARAMETERS["BATCH_SIZE"], shuffle=True)
-    test_loader = DataLoader(test_set, batch_size=HYPERPARAMETERS["BATCH_SIZE"], shuffle=False)
+def evaluate(model, loader, dataset):
+    model.eval()
+    predictions, ground_truths, tweet_texts = [], [], []
+    with torch.no_grad():
+        for x_batch, y_batch in loader:
+            x, y = x_batch.to(device), y_batch.to(device)
+            y_pred = model(x).squeeze().cpu().numpy()
+            predictions.extend(y_pred.tolist() if y_pred.ndim > 0 else [y_pred.item()])
+            ground_truths.extend(y.cpu().numpy())
+            tweet_texts.extend(dataset.x.cpu().numpy())
 
-    model = Model(HYPERPARAMETERS["EMBEDDING_DIM"], HYPERPARAMETERS["NUM_HIDDEN_NODES"],
-                  HYPERPARAMETERS["NUM_LAYERS"], HYPERPARAMETERS["BIDIRECTION"],
-                  HYPERPARAMETERS["DROPOUT"]).to(device)
+    # print(f"Dataset X: {dataset.x.cpu().numpy().shape}")
+    print(f"Predictions: {len(predictions)}")
+    print(f"Ground Truths: {len(ground_truths)}")
+    return tweet_texts, np.array(predictions).ravel(), np.array(ground_truths).ravel()
 
-    optimizer = optim.RMSprop(model.parameters(), lr=1e-4)
 
-    for epoch in range(1, HYPERPARAMETERS["NUM_TRAINING_EPOCHS"] + 1):
-        loss = train(model, train_loader, optimizer)
-        print(f"Epoch {epoch}: Loss = {loss:.5f}")
+def calculate_accuracy(ground_truth, predictions):
+    correct = sum((p > 0.5) == (t == 1) for p, t in zip(predictions, ground_truth))
+    return correct / len(ground_truth)
 
-    # Save trained model
-    model_path = "" # add the path you want to save the model to
-    torch.save(model.state_dict(), model_path)
-    print(f"Saved trained model to {model_path}")
+def run_cross_validation():
+    total_accuracy = 0
+    for fold in range(1, HYPERPARAMETERS["NUM_FOLDS"] + 1):
+        clear_cuda_memory()
+        print(f"Processing Fold {fold}...")
+        train_set, test_set = load_data(fold)
+        train_loader = DataLoader(train_set, batch_size=HYPERPARAMETERS["BATCH_SIZE"], shuffle=True)
+        test_loader = DataLoader(test_set)
+        model = Model(HYPERPARAMETERS["EMBEDDING_DIM"], HYPERPARAMETERS["NUM_HIDDEN_NODES"],
+                      HYPERPARAMETERS["NUM_LAYERS"], HYPERPARAMETERS["BIDIRECTION"],
+                      HYPERPARAMETERS["DROPOUT"]).to(device)
+        optimizer = optim.RMSprop(model.parameters(), lr=1e-4)
+        for epoch in range(1, HYPERPARAMETERS["NUM_TRAINING_EPOCHS"] + 1):
+            loss = train(model, train_loader, optimizer)
+            print(f"Fold {fold}, Epoch {epoch}: Loss = {loss:.5f}")
+        tweet_texts, test_predictions, ground_truths = evaluate(model, test_loader, test_set)
+        accuracy = calculate_accuracy(ground_truths, test_predictions)
+        print(f"Fold {fold} Accuracy: {accuracy:.5f}")
+        total_accuracy += accuracy
+
+        min_length = min(len(tweet_texts), len(test_predictions), len(ground_truths))
+
+        # Save predictions and ground truth to a CSV file
+        output_df = pd.DataFrame({
+            "Tweet_Text": tweet_texts[:min_length],  # Trim to min length
+            "Predicted_Score": test_predictions[:min_length],
+            "Ground_Truth": ground_truths[:min_length]
+        })
+        output_df.to_csv(f"/content/fold_predictions_{fold}.csv", index=False)
+        print(f"Saved predictions for Fold {fold} to fold_predictions_{fold}.csv")
+
+        # Save trained model for this fold
+        model_path = f"/content/model_fold_{fold}.pt"
+        torch.save(model.state_dict(), model_path)
+        print(f"Saved model for Fold {fold} to {model_path}")
+
+    avg_accuracy = total_accuracy / HYPERPARAMETERS["NUM_FOLDS"]
+    print(f"Average Accuracy across {HYPERPARAMETERS['NUM_FOLDS']} folds: {avg_accuracy:.5f}")
 
 if __name__ == "__main__":
-    run_training()
+    run_cross_validation()
