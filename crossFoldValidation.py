@@ -70,9 +70,10 @@ class Model(nn.Module):
         out = torch.sigmoid(self.fc2(out))
         return out
 
+# loads in the data by referring to the training and testing sets
 def load_data(fold):
-    train_file = f"/content/foldTrain{fold}.csv"
-    test_file = f"/content/foldTest{fold}.csv"
+    train_file = f"/folderName/foldTrain{fold}.csv" # add the correct path to the folder and make sure the name is of the same format
+    test_file = f"/folderName/foldTest{fold}.csv" # add the correct path to the folder and make sure the name is of the same format
     train_data = pd.read_csv(train_file)
     test_data = pd.read_csv(test_file)
     tokenizer = Tokenizer(num_words=1000)
@@ -141,11 +142,11 @@ def run_cross_validation():
             "Predicted_Score": test_predictions[:min_length],
             "Ground_Truth": ground_truths[:min_length]
         })
-        output_df.to_csv(f"/content/fold_predictions_{fold}.csv", index=False)
+        output_df.to_csv(f"/predictions/fold_predictions_{fold}.csv", index=False) # folder that stores in the prediction analytics for the specific fold you are working with
         print(f"Saved predictions for Fold {fold} to fold_predictions_{fold}.csv")
 
         # Save trained model for this fold
-        model_path = f"/content/model_fold_{fold}.pt"
+        model_path = f"/modelFiles/model_fold_{fold}.pt" # folder that stores in the neural network model for the specific fold you are working with
         torch.save(model.state_dict(), model_path)
         print(f"Saved model for Fold {fold} to {model_path}")
 
