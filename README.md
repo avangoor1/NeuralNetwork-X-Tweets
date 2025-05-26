@@ -11,3 +11,5 @@ Step 2: Train your neural network by running the crossFoldValidation.py program.
 Step 3: Now, you have a model created. You can now use this model to look at groups of communities online and 
 see where in the spectrum of luck and meritocracy they fall by analyzing the results of neural network when 
 tested against those tweets.
+
+Step 4: Once you have collected tweets from the specific group you want to test your model on, the best results in terms of correct classification was provided when the test set tweets were expanded. To expand your tweets, you can use the OpenAPI.py program and pass through each tweet you want to expand.

@@ -1,3 +1,5 @@
+# File details: This program was to capture specific words from the tweets in the test set
+# that were correctly classified by the model.
 
 file = open('TweetVocabsDictionariesTrue.csv', 'r')
 content = file.read()
