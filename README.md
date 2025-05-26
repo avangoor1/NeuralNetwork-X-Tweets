@@ -37,7 +37,7 @@ When you run the program, it will automatically store the generated model files 
 
 ## Step 3: Expand Test Tweets
 
-Once you have collected tweets from the specific group you want to test your model on, the best classification results are achieved when the test set tweets are expanded.
+We have a trained model, so let us now test it against a community. Refer back to the other repository to collect tweets from that specific community. Once you have collected tweets from the specific group you want to test your model on, the best classification results are achieved when the test set tweets are expanded.
 
 To expand your tweets, use the `OpenAPI.py` program and pass each tweet you want to expand through it.
 
